@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="/static/js/vue.js"></script>
+  <script src="/static/js/spark-md5.min.js"></script>
+  <!-- 生产环境版本，优化了尺寸和速度 -->
+  <!-- <script src="/static/js/vue.min.js"></script> -->
+  <!-- 引入样式 -->
+  <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+  <script src="/static/js/jquery.min.js"></script>
+  <!-- 引入组件库 -->
+
+  <title>用户问题列表</title>
+</head>
+
+<body>
+  <div id="app">
+    <el-container>
+      <el-header style="height: 35px">
+        <div class="wrap">
+          <div class="item">
+            <div class="right">所有问题列表</div>
+            <div class="left">
+              <el-button type="text" @click="toLogin" v-if="!userInfo.id">登录</el-button>
+              <span v-else v-text="userInfo.userName"></span>
+            </div>
+          </div>
+        </div>
+      </el-header>
+      <el-main style="padding-top: 5px">
+        <div class="content-wrap">
+          <div class="items">
+            <div class="item" v-for="item in allData" :key="item.id">
+              <div class="question lh" v-text="'问题：'.concat(item.questionTitle)">22222222</div>
+              <div class="video lh" v-if="item.video" v-text="'所属视频：'.concat(item.video.videoName)">111111</div>
+              <div class="answer lh" v-text="'答案：'.concat(item.questionAnswer||'未回答')"></div>
+              <div class="btns lh" v-if="!item.questionAnswer">
+                <el-button size="mini" @click="toAnswer(item)" type="primary">回答问题</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-main>
+      <el-footer>
+        <el-pagination @size-change="handleSizeChange" @current-change="handleCurrentChange" :current-page="currentPage"
+          :page-sizes="[20, 50, 100, 200, 300, 400]" :page-size="pageSize"
+          layout="total, sizes, prev, pager, next, jumper" :total="total">
+        </el-pagination>
+      </el-footer>
+    </el-container>
+    <el-dialog @close="close" :visible.sync="visible" title="用户登录">
+      <el-form v-if="curAction==='login'" :model="loginForm" status-icon ref="loginForm" label-width="100px">
+        <el-form-item label="账号">
+          <el-input type="text" v-model="loginForm.username" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input type="password" v-model="loginForm.openid" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item style="text-align: center">
+          <el-button type="primary" @click="login">登 录</el-button>
+        </el-form-item>
+      </el-form>
+      <div v-else>
+        <el-input type="textarea" :rows="6" placeholder="请输入内容" v-model="answerForm.questionAnswer">
+        </el-input>
+        <div style="text-align: right;margin-top:10px;">
+          <el-button type="primary" @click="submitAnswer" size="mini">提交回答</el-button>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+  <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+  <script>
+    new Vue({
+      el: "#app",
+      data: function () {
+        return {
+          visible: false,
+          loginForm: {
+            username: undefined,
+            openid: undefined,
+          },
+          answerForm: {
+            questionId: undefined,
+            questionAnswer: undefined,
+          },
+          token: undefined,
+          userInfo: {},
+          total: 0,
+          pageSize: 20,
+          currentPage: 1,
+          allData: [],
+          curAction: ""
+        };
+      },
+      created: function () {
+        var token = window.localStorage.getItem("educ-token");
+        if (token) {
+          this.token = token;
+          this.getUserInfo();
+          this.loadData();
+        }
+      },
+      methods: {
+        close: function () {
+          this.answerForm = {
+            questionId: undefined,
+            questionAnswer: undefined,
+          }
+          this.loginForm = {
+            username: undefined,
+            openid: undefined,
+          }
+          this.curAction = ""
+        },
+        toLogin: function () {
+          this.visible = true
+          this.curAction = "login"
+        },
+        toAnswer: function (item) {
+          this.visible = true
+          this.curAction = "answer"
+          this.answerForm.questionId = item.id
+        },
+        message: function (type, message) {
+          window.ELEMENT.Message({
+            message: message,
+            type: type
+          })
+        },
+        submitAnswer: function () {
+          this.post('/api/answerQuestion', this.answerForm)
+            .then(res => {
+              this.loadData()
+              this.visible = false
+            })
+            .catch(err => console.log(err))
+        },
+        handleSizeChange: function (val) {
+          this.pageSize = val;
+          this.loadData();
+        },
+        handleCurrentChange: function (val) {
+          this.currentPage = val;
+          this.loadData();
+        },
+        loadData: function () {
+          var form = {
+            pageSize: this.pageSize,
+            currentPage: this.currentPage,
+          };
+          this.post("/api/getVideoQuestion", form)
+            .then((res) => {
+              res.data.forEach(function (item) {
+                item.video = JSON.parse(item.video.replace(/\'/g, '"'));
+                item.questionAnswer = item.questionAnswer.replace('None', '');
+              });
+              this.allData = res.data || [];
+              this.total = res.total || 0;
+            })
+            .catch((err) => console.log(err));
+        },
+        login: function () {
+          var form = Object.assign({}, this.loginForm);
+          form.openid = SparkMD5.hash(form.openid);
+          this.post("/api/login", form)
+            .then((res) => {
+              console.log(res, 9999);
+              this.token = res.data;
+              window.localStorage.setItem("educ-token", res.data);
+              this.getUserInfo();
+              this.visible = false;
+            })
+            .catch((err) => console.log(err));
+        },
+        getUserInfo: function () {
+          this.post("/api/getUserInfo")
+            .then((res) => {
+              this.userInfo = res.data;
+            })
+            .catch((err) => console.log(err));
+        },
+        post: function (url, data) {
+          var _this = this;
+          return new Promise(function (resolve, reject) {
+            console.log(window.localStorage.getItem("educ-token"));
+            $.ajax({
+              type: "POST",
+              url: url,
+              dataType: "json",
+              data: JSON.stringify(data),
+              contentType: "application/json",
+              headers: { token: window.localStorage.getItem("educ-token") },
+              success: (res) => {
+                console.log(res.code);
+                if (res.code >= 1005 && res.code <= 1010) {
+                  window.localStorage.removeItem("educ-token");
+                  reject(res);
+                  _this.message("error", res.msg);
+                  return;
+                }
+                if (res.code !== 0) {
+                  reject(res);
+                  _this.message("error", res.msg);
+                  return;
+                }
+                _this.message("success", res.msg);
+                resolve(res);
+              },
+              error: (err) => reject(err),
+            });
+          });
+        },
+        get: function (url, param) {
+          var _this = this;
+          return new Promise(function (resolve, reject) {
+            url = addQueryString(url, param);
+            $.ajax({
+              type: "GET",
+              url: url,
+              dataType: "json",
+              headers: { token: window.localStorage.getItem("educ-token") },
+              success: (res) => {
+                if (res.code >= 1005 && res.code <= 1010) {
+                  window.localStorage.removeItem("educ-token");
+                  reject(res);
+                  _this.message("error", res.msg);
+                  return;
+                }
+                if (res.code !== 0) {
+                  reject(res);
+                  _this.message("error", res.msg);
+                  return;
+                }
+                _this.message("success", res.msg);
+                resolve(res);
+              },
+              error: (err) => reject(err),
+            });
+          });
+        },
+      },
+    });
+  </script>
+  <style>
+    body {
+      padding: 0px;
+      margin: 0px;
+    }
+
+    .el-main {
+      min-height: calc(100vh - 95px);
+    }
+
+    .el-header,
+    .el-footer {
+      color: #333;
+      text-align: center;
+      line-height: 35px;
+    }
+
+    .el-header {
+      background-color: #b3c0d1;
+    }
+
+    .el-footer {
+      background-color: #ffff;
+    }
+
+    .el-main {
+      background-color: #ffffff;
+      color: #333;
+      text-align: center;
+    }
+
+    #app .el-header .wrap,
+    #app .el-header .wrap .item {
+      display: flex;
+      display: -webkit-flex;
+    }
+
+    #app .el-header .wrap {
+      justify-content: flex-end;
+    }
+
+    #app .el-header .wrap .item {
+      justify-content: space-between;
+      width: 60%;
+    }
+
+    #app .el-main .content-wrap .items {
+      width: 1050px;
+      margin: 0 auto;
+    }
+
+    #app .el-main .content-wrap .item {
+      text-align: left;
+      padding: 10px;
+      border: 1px solid #eee;
+      margin-top: 10px;
+    }
+
+    #app .el-main .content-wrap .item .question {
+      font-weight: bold;
+      color: #333;
+    }
+
+    #app .el-main .content-wrap .item .video {
+      font-weight: 500;
+      color: #333;
+    }
+
+    #app .el-main .content-wrap .item .answer {
+      font-weight: 500;
+      color: #333;
+    }
+
+    #app .el-main .content-wrap .item .lh {
+      margin-top: 10px;
+    }
+  </style>
+</body>
+
+</html>
